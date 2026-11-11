@@ -1,0 +1,889 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BASIC to LLVM IR Compiler & IDE</title>
+<style>
+  :root {
+    --bg-white: #ffffff;
+    --bg-panel: #ffffff;
+    --border-color: #e2e8f0;
+    --border-hover: #cbd5e1;
+    --text-primary: #0f172a;
+    --text-secondary: #64748b;
+    --accent-blue: #2563eb;
+    --accent-hover: #1d4ed8;
+    --error-red: #ef4444;
+    --success-green: #10b981;
+    --code-bg: #ffffff;
+  }
+
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background-color: var(--bg-white);
+    color: var(--text-primary);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* Header Toolbar */
+  header {
+    background: #ffffff;
+    border-bottom: 1px solid var(--border-color);
+    padding: 10px 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .brand-badge {
+    background: #0f172a;
+    color: #ffffff;
+    font-weight: 700;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+    padding: 3px 8px;
+    border-radius: 4px;
+  }
+
+  h1 {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  select, button {
+    font-family: inherit;
+    font-size: 13px;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+    background: #ffffff;
+    color: var(--text-primary);
+    padding: 6px 14px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  select:hover, button:hover {
+    border-color: var(--border-hover);
+    background: #f8fafc;
+  }
+
+  button.primary {
+    background: var(--accent-blue);
+    border-color: var(--accent-blue);
+    color: #ffffff;
+    font-weight: 500;
+  }
+
+  button.primary:hover {
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
+  }
+
+  /* Workspace Layout */
+  .workspace {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+    background: #ffffff;
+  }
+
+  .pane {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: #ffffff;
+    border-right: 1px solid var(--border-color);
+    position: relative;
+  }
+
+  .pane:last-child {
+    border-right: none;
+  }
+
+  .pane-header {
+    padding: 10px 18px;
+    background: #ffffff;
+    border-bottom: 1px solid var(--border-color);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .document-area {
+    flex: 1;
+    background: #ffffff;
+    position: relative;
+    overflow: hidden;
+  }
+
+  textarea, pre {
+    width: 100%;
+    height: 100%;
+    border: none;
+    outline: none;
+    padding: 16px 20px;
+    font-family: "JetBrains Mono", "SF Mono", "Fira Code", Menlo, Monaco, Consolas, monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    background: #ffffff;
+    color: #1e293b;
+    resize: none;
+    white-space: pre;
+    overflow: auto;
+  }
+
+  /* Console & Diagnostic Status Bar */
+  .footer-status {
+    background: #ffffff;
+    border-top: 1px solid var(--border-color);
+    padding: 8px 20px;
+    font-size: 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: var(--text-secondary);
+  }
+
+  .status-message {
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+
+  .status-ready { background-color: var(--success-green); }
+  .status-error { background-color: var(--error-red); }
+
+  /* Syntax Highlighting for Output */
+  .llvm-keyword { color: #0284c7; font-weight: 600; }
+  .llvm-type { color: #7c3aed; }
+  .llvm-variable { color: #d97706; }
+  .llvm-label { color: #059669; font-weight: 600; }
+  .llvm-comment { color: #94a3b8; font-style: italic; }
+  .llvm-string { color: #16a34a; }
+</style>
+</head>
+<body>
+
+  <header>
+    <div class="brand">
+      <span class="brand-badge">BASIC &rarr; LLVM</span>
+      <h1>Label-Based BASIC Compiler</h1>
+    </div>
+    <div class="actions">
+      <select id="exampleSelector" onchange="loadPreset(this.value)">
+        <option value="factorial">Example: Factorial Calculator</option>
+        <option value="fibonacci">Example: Fibonacci Generator</option>
+        <option value="collatz">Example: Collatz 3n+1 Sequence</option>
+        <option value="gcd">Example: Greatest Common Divisor</option>
+      </select>
+      <button onclick="compileBasic()">Compile</button>
+      <button class="primary" onclick="copyLLVM()">Copy LLVM IR</button>
+    </div>
+  </header>
+
+  <main class="workspace">
+    <!-- BASIC Editor Document -->
+    <section class="pane">
+      <div class="pane-header">
+        <span>BASIC Source (Strict Labels Only)</span>
+        <span style="font-size: 11px; font-weight: 400; text-transform: none; color: #94a3b8;">No line numbers &bull; No gosubs &bull; No trig</span>
+      </div>
+      <div class="document-area">
+        <textarea id="basicCode" spellcheck="false" placeholder="Enter BASIC code here..."></textarea>
+      </div>
+    </section>
+
+    <!-- LLVM IR Output Document -->
+    <section class="pane">
+      <div class="pane-header">
+        <span>Target: LLVM IR Assembly</span>
+        <span id="irStats" style="font-size: 11px; font-weight: 400; text-transform: none; color: #94a3b8;">0 lines</span>
+      </div>
+      <div class="document-area">
+        <pre id="llvmOutput">; Press "Compile" to generate LLVM IR...</pre>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer-status">
+    <div class="status-message" id="compilerStatus">
+      <span class="status-dot status-ready"></span> Compiler ready.
+    </div>
+    <div>Target: <code>x86_64-pc-linux-gnu / generic</code></div>
+  </footer>
+
+<script>
+// --- Presets (Label-based, no line numbers, no trig, no subroutines) ---
+const PRESETS = {
+  factorial: 
+`REM Factorial Calculation (Label-Only BASIC)
+PRINT "Factorial Calculator"
+PRINT "Enter a positive number:"
+INPUT n
+
+fact = 1
+i = 1
+
+loop:
+IF i > n THEN GOTO finish
+fact = fact * i
+i = i + 1
+GOTO loop
+
+finish:
+PRINT "Factorial result is:"
+PRINT fact
+END`,
+
+  fibonacci:
+`REM Fibonacci Sequence Generator
+PRINT "Fibonacci Generator"
+PRINT "Enter how many terms to generate:"
+INPUT count
+
+a = 0
+b = 1
+idx = 0
+
+print_loop:
+IF idx >= count THEN GOTO done
+PRINT a
+next_val = a + b
+a = b
+b = next_val
+idx = idx + 1
+GOTO print_loop
+
+done:
+PRINT "Done!"
+END`,
+
+  collatz:
+`REM Collatz Conjecture (3N + 1)
+PRINT "Enter starting number:"
+INPUT n
+steps = 0
+
+collatz_loop:
+PRINT n
+IF n = 1 THEN GOTO done
+steps = steps + 1
+
+REM Check if even (n % 2 == 0)
+rem_val = n % 2
+IF rem_val = 0 THEN GOTO is_even
+
+REM Odd step
+n = 3 * n + 1
+GOTO collatz_loop
+
+is_even:
+n = n / 2
+GOTO collatz_loop
+
+done:
+PRINT "Total steps taken:"
+PRINT steps
+END`,
+
+  gcd:
+`REM Greatest Common Divisor (Euclidean)
+PRINT "Enter first number (A):"
+INPUT a
+PRINT "Enter second number (B):"
+INPUT b
+
+euclid:
+IF b = 0 THEN GOTO finish
+temp = b
+b = a % b
+a = temp
+GOTO euclid
+
+finish:
+PRINT "GCD is:"
+PRINT a
+END`
+};
+
+// --- Lexer & Parser Implementation ---
+
+class Lexer {
+  constructor(source) {
+    this.source = source;
+    this.pos = 0;
+    this.line = 1;
+  }
+
+  peek() {
+    return this.pos < this.source.length ? this.source[this.pos] : null;
+  }
+
+  next() {
+    const ch = this.peek();
+    this.pos++;
+    if (ch === '\n') this.line++;
+    return ch;
+  }
+
+  tokenize() {
+    const tokens = [];
+    while (this.pos < this.source.length) {
+      let ch = this.peek();
+
+      if (ch === ' ' || ch === '\t' || ch === '\r') {
+        this.next();
+        continue;
+      }
+
+      if (ch === '\n') {
+        tokens.push({ type: 'NEWLINE', line: this.line });
+        this.next();
+        continue;
+      }
+
+      // Check comments
+      if (ch === "'") {
+        while (this.peek() && this.peek() !== '\n') this.next();
+        continue;
+      }
+
+      // Check strings
+      if (ch === '"') {
+        this.next();
+        let str = "";
+        while (this.peek() && this.peek() !== '"' && this.peek() !== '\n') {
+          str += this.next();
+        }
+        if (this.peek() === '"') this.next();
+        tokens.push({ type: 'STRING', value: str, line: this.line });
+        continue;
+      }
+
+      // Check numbers
+      if (/[0-9]/.test(ch)) {
+        let numStr = "";
+        while (this.peek() && /[0-9]/.test(this.peek())) {
+          numStr += this.next();
+        }
+        tokens.push({ type: 'NUMBER', value: parseInt(numStr, 10), line: this.line });
+        continue;
+      }
+
+      // Identifiers / Keywords
+      if (/[a-zA-Z_]/.test(ch)) {
+        let ident = "";
+        while (this.peek() && /[a-zA-Z0-9_]/.test(this.peek())) {
+          ident += this.next();
+        }
+        const upper = ident.toUpperCase();
+
+        if (upper === 'REM') {
+          while (this.peek() && this.peek() !== '\n') this.next();
+          continue;
+        }
+
+        // Prohibit trigonometric or subroutine keywords
+        const prohibited = ['SIN', 'COS', 'TAN', 'ASIN', 'ACOS', 'ATAN', 'GOSUB', 'RETURN', 'DEF', 'FN'];
+        if (prohibited.includes(upper)) {
+          throw new Error(`Line ${this.line}: Keyword "${upper}" is not supported in this dialect.`);
+        }
+
+        tokens.push({ type: 'IDENT', value: ident, upper: upper, line: this.line });
+        continue;
+      }
+
+      // Multi-character comparisons
+      if (ch === '<') {
+        this.next();
+        if (this.peek() === '=') { this.next(); tokens.push({ type: '<=', line: this.line }); }
+        else if (this.peek() === '>') { this.next(); tokens.push({ type: '<>', line: this.line }); }
+        else tokens.push({ type: '<', line: this.line });
+        continue;
+      }
+
+      if (ch === '>') {
+        this.next();
+        if (this.peek() === '=') { this.next(); tokens.push({ type: '>=', line: this.line }); }
+        else tokens.push({ type: '>', line: this.line });
+        continue;
+      }
+
+      // Single characters
+      if (['+', '-', '*', '/', '%', '(', ')', '=', ':', ','].includes(ch)) {
+        tokens.push({ type: ch, line: this.line });
+        this.next();
+        continue;
+      }
+
+      throw new Error(`Line ${this.line}: Unexpected character '${ch}'`);
+    }
+
+    tokens.push({ type: 'EOF', line: this.line });
+    return tokens;
+  }
+}
+
+class LLVMCompiler {
+  constructor(tokens) {
+    this.tokens = tokens;
+    this.idx = 0;
+    this.variables = new Set();
+    this.stringTable = new Map();
+    this.stringCounter = 0;
+    this.tempRegCounter = 1;
+    this.labelBlockCounter = 1;
+    this.instructions = [];
+    this.currentBlock = 'entry';
+    this.declaredLabels = new Set();
+    this.blockTerminated = false;
+  }
+
+  peek() {
+    return this.tokens[this.idx];
+  }
+
+  next() {
+    return this.tokens[this.idx++];
+  }
+
+  match(type) {
+    if (this.peek().type === type) {
+      return this.next();
+    }
+    return null;
+  }
+
+  expect(type) {
+    const t = this.match(type);
+    if (!t) {
+      const cur = this.peek();
+      throw new Error(`Line ${cur.line}: Expected '${type}' but found '${cur.value || cur.type}'`);
+    }
+    return t;
+  }
+
+  getStringGlobal(str) {
+    if (this.stringTable.has(str)) {
+      return this.stringTable.get(str);
+    }
+    const name = `.str.${this.stringCounter++}`;
+    this.stringTable.set(str, name);
+    return name;
+  }
+
+  freshReg() {
+    return `%${this.tempRegCounter++}`;
+  }
+
+  emit(instruction) {
+    if (!this.blockTerminated) {
+      this.instructions.push(`  ${instruction}`);
+    }
+  }
+
+  emitLabel(labelName) {
+    if (!this.blockTerminated) {
+      this.emit(`br label %${labelName}`);
+    }
+    this.instructions.push(`${labelName}:`);
+    this.currentBlock = labelName;
+    this.blockTerminated = false;
+  }
+
+  // Expression parser (Pratt / Precedence Climbing)
+  parsePrimary() {
+    const t = this.peek();
+    if (t.type === 'NUMBER') {
+      this.next();
+      return { type: 'const', value: t.value };
+    }
+    if (t.type === 'IDENT') {
+      this.next();
+      const varName = t.value.toLowerCase();
+      this.variables.add(varName);
+      return { type: 'var', name: varName };
+    }
+    if (this.match('(')) {
+      const expr = this.parseExpression(0);
+      this.expect(')');
+      return expr;
+    }
+    if (this.match('-')) {
+      const right = this.parsePrimary();
+      return { type: 'unary_neg', expr: right };
+    }
+    throw new Error(`Line ${t.line}: Unexpected token in expression: '${t.value || t.type}'`);
+  }
+
+  getPrecedence(type) {
+    switch (type) {
+      case '*': case '/': case '%': return 20;
+      case '+': case '-': return 10;
+      default: return 0;
+    }
+  }
+
+  parseExpression(minPrec = 0) {
+    let left = this.parsePrimary();
+
+    while (true) {
+      const op = this.peek().type;
+      const prec = this.getPrecedence(op);
+      if (prec <= minPrec) break;
+
+      this.next();
+      const right = this.parseExpression(prec);
+      left = { type: 'binop', op: op, left: left, right: right };
+    }
+
+    return left;
+  }
+
+  generateExprIR(node) {
+    if (node.type === 'const') {
+      return node.value.toString();
+    }
+    if (node.type === 'var') {
+      const reg = this.freshReg();
+      this.emit(`${reg} = load i64, i64* %${node.name}, align 8`);
+      return reg;
+    }
+    if (node.type === 'unary_neg') {
+      const val = this.generateExprIR(node.expr);
+      const reg = this.freshReg();
+      this.emit(`${reg} = sub nsw i64 0, ${val}`);
+      return reg;
+    }
+    if (node.type === 'binop') {
+      const lVal = this.generateExprIR(node.left);
+      const rVal = this.generateExprIR(node.right);
+      const reg = this.freshReg();
+      let llvmOp = 'add nsw';
+      if (node.op === '+') llvmOp = 'add nsw';
+      if (node.op === '-') llvmOp = 'sub nsw';
+      if (node.op === '*') llvmOp = 'mul nsw';
+      if (node.op === '/') llvmOp = 'sdiv';
+      if (node.op === '%') llvmOp = 'srem';
+      this.emit(`${reg} = ${llvmOp} i64 ${lVal}, ${rVal}`);
+      return reg;
+    }
+    throw new Error("Unknown expression AST node");
+  }
+
+  parseCondition() {
+    const left = this.parseExpression(0);
+    const relOpToken = this.peek();
+    const validRelOps = ['=', '<>', '<', '<=', '>', '>='];
+    if (!validRelOps.includes(relOpToken.type)) {
+      throw new Error(`Line ${relOpToken.line}: Expected relational operator, got '${relOpToken.type}'`);
+    }
+    this.next();
+    const right = this.parseExpression(0);
+    return { left, op: relOpToken.type, right };
+  }
+
+  compileProgram() {
+    // First pass to discover labels
+    for (let i = 0; i < this.tokens.length - 1; i++) {
+      if (this.tokens[i].type === 'IDENT' && this.tokens[i+1].type === ':') {
+        this.declaredLabels.add(this.tokens[i].value.toLowerCase());
+      }
+    }
+
+    // Main parsing loop
+    while (this.peek().type !== 'EOF') {
+      if (this.match('NEWLINE')) continue;
+
+      const tok = this.peek();
+
+      // Check Label: ident:
+      if (tok.type === 'IDENT' && this.tokens[this.idx + 1] && this.tokens[this.idx + 1].type === ':') {
+        const labelName = tok.value.toLowerCase();
+        this.next(); // name
+        this.next(); // ':'
+        this.emitLabel(`lbl_${labelName}`);
+        continue;
+      }
+
+      // Check Statements
+      if (tok.type === 'IDENT') {
+        const upper = tok.upper;
+
+        if (upper === 'PRINT') {
+          this.next();
+          this.parsePrint();
+          continue;
+        }
+
+        if (upper === 'INPUT') {
+          this.next();
+          const v = this.expect('IDENT').value.toLowerCase();
+          this.variables.add(v);
+          this.emit(`call i32 (i8*, ...) @scanf(i8* getelementptr inbounds ([5 x i8], [5 x i8]* @.fmt_scan, i32 0, i32 0), i64* %${v})`);
+          continue;
+        }
+
+        if (upper === 'GOTO') {
+          this.next();
+          const target = this.expect('IDENT').value.toLowerCase();
+          this.emit(`br label %lbl_${target}`);
+          this.blockTerminated = true;
+          continue;
+        }
+
+        if (upper === 'IF') {
+          this.next();
+          this.parseIf();
+          continue;
+        }
+
+        if (upper === 'LET') {
+          this.next();
+          this.parseAssignment();
+          continue;
+        }
+
+        if (upper === 'END' || upper === 'STOP') {
+          this.next();
+          this.emit(`ret i32 0`);
+          this.blockTerminated = true;
+          continue;
+        }
+
+        // Implicit assignment: x = expr
+        if (this.tokens[this.idx + 1] && this.tokens[this.idx + 1].type === '=') {
+          this.parseAssignment();
+          continue;
+        }
+      }
+
+      throw new Error(`Line ${tok.line}: Unrecognized statement or syntax '${tok.value || tok.type}'`);
+    }
+
+    if (!this.blockTerminated) {
+      this.emit(`ret i32 0`);
+    }
+
+    return this.assembleLLVM();
+  }
+
+  parsePrint() {
+    let first = true;
+    while (this.peek().type !== 'NEWLINE' && this.peek().type !== 'EOF') {
+      if (!first && this.match(',')) {
+        // comma separator
+      }
+
+      const t = this.peek();
+      if (t.type === 'STRING') {
+        this.next();
+        const globalName = this.getStringGlobal(t.value + "\n");
+        const strLen = (new TextEncoder().encode(t.value).length) + 2; // text + \n + \0
+        this.emit(`call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([${strLen} x i8], [${strLen} x i8]* @${globalName}, i32 0, i32 0))`);
+      } else {
+        const valReg = this.generateExprIR(this.parseExpression(0));
+        this.emit(`call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([6 x i8], [6 x i8]* @.fmt_int_nl, i32 0, i32 0), i64 ${valReg})`);
+      }
+
+      first = false;
+      if (this.peek().type === 'NEWLINE' || this.peek().type === 'EOF') break;
+      if (this.peek().type !== ',') break;
+    }
+  }
+
+  parseAssignment() {
+    const identToken = this.expect('IDENT');
+    const varName = identToken.value.toLowerCase();
+    this.variables.add(varName);
+    this.expect('=');
+    const expr = this.parseExpression(0);
+    const resultReg = this.generateExprIR(expr);
+    this.emit(`store i64 ${resultReg}, i64* %${varName}, align 8`);
+  }
+
+  parseIf() {
+    const cond = this.parseCondition();
+    const thenTok = this.expect('IDENT');
+    if (thenTok.upper !== 'THEN') {
+      throw new Error(`Line ${thenTok.line}: Expected 'THEN' after condition`);
+    }
+
+    if (this.peek().type === 'IDENT' && this.peek().upper === 'GOTO') {
+      this.next(); // Consume GOTO
+    }
+
+    const targetLabel = this.expect('IDENT').value.toLowerCase();
+
+    const lVal = this.generateExprIR(cond.left);
+    const rVal = this.generateExprIR(cond.right);
+    const condReg = this.freshReg();
+
+    let llvmCmp = 'eq';
+    if (cond.op === '=') llvmCmp = 'eq';
+    if (cond.op === '<>') llvmCmp = 'ne';
+    if (cond.op === '<') llvmCmp = 'slt';
+    if (cond.op === '<=') llvmCmp = 'sle';
+    if (cond.op === '>') llvmCmp = 'sgt';
+    if (cond.op === '>=') llvmCmp = 'sge';
+
+    this.emit(`${condReg} = icmp ${llvmCmp} i64 ${lVal}, ${rVal}`);
+
+    const fallthroughLabel = `if_cont_${this.labelBlockCounter++}`;
+    this.emit(`br i1 ${condReg}, label %lbl_${targetLabel}, label %${fallthroughLabel}`);
+    this.instructions.push(`${fallthroughLabel}:`);
+    this.currentBlock = fallthroughLabel;
+  }
+
+  assembleLLVM() {
+    const lines = [];
+    lines.push(`; --- Generated by BASIC to LLVM Compiler ---`);
+    lines.push(`source_filename = "program.bas"`);
+    lines.push(`target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128"`);
+    lines.push(`target triple = "x86_64-pc-linux-gnu"`);
+    lines.push(``);
+
+    // Common standard formats
+    lines.push(`@.fmt_int_nl = private unnamed_addr constant [6 x i8] c"%lld\\0A\\00", align 1`);
+    lines.push(`@.fmt_scan = private unnamed_addr constant [5 x i8] c"%lld\\00", align 1`);
+
+    // String literals
+    for (const [rawStr, globalName] of this.stringTable.entries()) {
+      const bytes = new TextEncoder().encode(rawStr);
+      let hexStr = "";
+      for (const b of bytes) {
+        if (b === 10) {
+          hexStr += "\\0A";
+        } else if (b >= 32 && b <= 126 && b !== 34 && b !== 92) {
+          hexStr += String.fromCharCode(b);
+        } else {
+          hexStr += "\\" + b.toString(16).padStart(2, '0').toUpperCase();
+        }
+      }
+      hexStr += "\\00";
+      const totalLen = bytes.length + 1;
+      lines.push(`@${globalName} = private unnamed_addr constant [${totalLen} x i8] c"${hexStr}", align 1`);
+    }
+
+    lines.push(``);
+    lines.push(`declare i32 @printf(i8*, ...)`);
+    lines.push(`declare i32 @scanf(i8*, ...)`);
+    lines.push(``);
+
+    lines.push(`define i32 @main() {`);
+    lines.push(`entry:`);
+
+    // Allocations for all program variables
+    if (this.variables.size > 0) {
+      lines.push(`  ; Allocate variables`);
+      for (const v of Array.from(this.variables).sort()) {
+        lines.push(`  %${v} = alloca i64, align 8`);
+      }
+      lines.push(`  ; Initialize variables to 0`);
+      for (const v of Array.from(this.variables).sort()) {
+        lines.push(`  store i64 0, i64* %${v}, align 8`);
+      }
+    }
+
+    lines.push(...this.instructions);
+    lines.push(`}`);
+    return lines.join('\n');
+  }
+}
+
+// --- IDE Controller ---
+
+function compileBasic() {
+  const code = document.getElementById('basicCode').value;
+  const statusEl = document.getElementById('compilerStatus');
+  const outputEl = document.getElementById('llvmOutput');
+  const statsEl = document.getElementById('irStats');
+
+  try {
+    const lexer = new Lexer(code);
+    const tokens = lexer.tokenize();
+    const compiler = new LLVMCompiler(tokens);
+    const llvmIR = compiler.compileProgram();
+
+    // Render plain code (or highlight if desired)
+    outputEl.textContent = llvmIR;
+    const lineCount = llvmIR.split('\n').length;
+    statsEl.textContent = `${lineCount} lines generated`;
+
+    statusEl.innerHTML = `<span class="status-dot status-ready"></span> Compilation successful. Ready to run via Clang.`;
+  } catch (err) {
+    outputEl.textContent = `; Compilation failed:\n; ${err.message}`;
+    statusEl.innerHTML = `<span class="status-dot status-error"></span> ${err.message}`;
+    statsEl.textContent = `Error`;
+  }
+}
+
+function loadPreset(name) {
+  if (PRESETS[name]) {
+    document.getElementById('basicCode').value = PRESETS[name];
+    compileBasic();
+  }
+}
+
+function copyLLVM() {
+  const output = document.getElementById('llvmOutput').textContent;
+  navigator.clipboard.writeText(output).then(() => {
+    const originalText = document.querySelector('button.primary').textContent;
+    document.querySelector('button.primary').textContent = 'Copied!';
+    setTimeout(() => {
+      document.querySelector('button.primary').textContent = originalText;
+    }, 1500);
+  });
+}
+
+// Auto-compile as user types with debouncing
+let debounceTimer;
+document.getElementById('basicCode').addEventListener('input', () => {
+  clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(compileBasic, 250);
+});
+
+// Initial boot
+window.addEventListener('DOMContentLoaded', () => {
+  loadPreset('factorial');
+});
+</script>
+</body>
+</html>
