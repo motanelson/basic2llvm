@@ -283,7 +283,10 @@ namespace BasicToLLVM
 
         private string FreshReg()
         {
-            return "%" + tempRegCounter++;
+            // Use named LLVM temporaries instead of numeric slots (%1, %2, ...).
+            // The dot also keeps these names distinct from BASIC variable names,
+            // whose identifiers cannot contain a dot.
+            return "%tmp." + tempRegCounter++;
         }
 
         private void Emit(string instruction)
@@ -788,7 +791,7 @@ END"
         private static int Main(string[] args)
         {
             Console.BackgroundColor = ConsoleColor.White;
-            Console.ForegroundColor= ConsoleColor.Black;
+            Console.ForegroundColor = ConsoleColor.Black;
             Console.Clear();
             if (args.Length == 0 || args.Length > 3)
             {
